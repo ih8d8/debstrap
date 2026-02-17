@@ -1,0 +1,33 @@
+- name: Detect main network interface
+  ansible.builtin.set_fact:
+    ntopng_interface: "{{ ansible_default_ipv4.interface }}"
+  when: ntopng_interface is not defined
+
+- name: Ensure ntopng directory exist
+  ansible.builtin.file:
+    path: /root/ntopng
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: "Copy docker-compose file (service: {{ service_name }})"
+  ansible.builtin.template:
+    src: docker_compose.yaml.j2
+    dest: /root/ntopng/docker-compose.yaml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: "Bring down Docker containers and remove volumes (service: {{ service_name }})"
+  tags:
+    - docker-remove
+  community.docker.docker_compose_v2:
+    project_src: "/root/ntopng/"
+    state: absent
+    remove_volumes: true
+
+- name: "Run docker-compose up (service: {{ service_name }})"
+  community.docker.docker_compose_v2:
+    project_src: "/root/ntopng/"
+    state: present

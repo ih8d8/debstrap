@@ -1,0 +1,24 @@
+- name: restart sshd
+  ansible.builtin.service:
+    name: sshd
+    state: restarted
+
+- name: restart docker
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+
+- name: restart journald
+  ansible.builtin.service:
+    name: systemd-journald
+    state: restarted
+
+- name: restart ufw
+  ansible.builtin.service:
+    name: ufw
+    state: restarted
+
+- name: restart fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: restarted

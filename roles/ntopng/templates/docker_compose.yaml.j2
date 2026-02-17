@@ -1,0 +1,17 @@
+---
+
+volumes:
+  ntopng-data:
+
+services:
+  ntopng:
+    image: ntop/ntopng:latest
+    container_name: ntopng
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    volumes:
+      - ntopng-data:/var/lib/ntopng
+    command: -d /var/lib/ntopng -i {{ ntopng_interface }} -w {{ ntopng_listen_address }}:3000

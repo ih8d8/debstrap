@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+IPSET_NAME="geoblock"
+ZONE_DIR="/var/cache/geoblock"
+COUNTRIES=({{ blocked_countries | join(' ') }})
+
+mkdir -p "${ZONE_DIR}"
+
+# Download zone files, fall back to cached copies
+for country in "${COUNTRIES[@]}"; do
+    curl -sf -o "${ZONE_DIR}/${country}.zone.tmp" "https://www.ipdeny.com/ipblocks/data/aggregated/${country}-aggregated.zone" \
+        && mv "${ZONE_DIR}/${country}.zone.tmp" "${ZONE_DIR}/${country}.zone" \
+        || true
+done
+
+# Build the ipset from zone files
+ipset create "${IPSET_NAME}-tmp" hash:net maxelem 500000 2>/dev/null || ipset flush "${IPSET_NAME}-tmp"
+
+for country in "${COUNTRIES[@]}"; do
+    if [[ -f "${ZONE_DIR}/${country}.zone" ]]; then
+        while IFS= read -r cidr; do
+            [ -n "${cidr}" ] && ipset add "${IPSET_NAME}-tmp" "${cidr}" 2>/dev/null || true
+        done < "${ZONE_DIR}/${country}.zone"
+    fi
+done
+
+ipset create "${IPSET_NAME}" hash:net maxelem 500000 2>/dev/null || true
+ipset swap "${IPSET_NAME}-tmp" "${IPSET_NAME}"
+ipset destroy "${IPSET_NAME}-tmp" 2>/dev/null || true
+
+# Save for restore on boot
+ipset save "${IPSET_NAME}" -f "${ZONE_DIR}/geoblock.rules"

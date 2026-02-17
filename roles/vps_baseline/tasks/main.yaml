@@ -1,0 +1,253 @@
+- name: Update package list and upgrade all packages
+  ansible.builtin.apt:
+    upgrade: safe
+    update_cache: true
+
+- name: Install necessary packages
+  tags:
+    - install_packages
+  ansible.builtin.apt:
+    name: "{{ packages }}"
+    state: present
+    update_cache: true
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: >
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/{{ ansible_distribution | lower }}
+      {{ ansible_distribution_release }} stable
+    state: present
+    update_cache: true
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name: "{{ docker_packages }}"
+    state: present
+    update_cache: true
+
+- name: Download Tailscale GPG key
+  ansible.builtin.get_url:
+    url: https://pkgs.tailscale.com/stable/{{ ansible_distribution | lower }}/{{ ansible_distribution_release }}.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: '0644'
+
+- name: Add Tailscale repository
+  ansible.builtin.apt_repository:
+    repo: >
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+      https://pkgs.tailscale.com/stable/{{ ansible_distribution | lower }}
+      {{ ansible_distribution_release }} main
+    state: present
+    update_cache: true
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Enable and start tailscaled service
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Remove and clean apt cache
+  ansible.builtin.apt:
+    autoclean: true
+    autoremove: true
+
+- name: Create a Docker network
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
+- name: Set system locale to en_US.UTF-8
+  community.general.locale_gen:
+    name: en_US.UTF-8
+
+- name: Copy .bashrc file ro root user home directory
+  ansible.builtin.copy:
+    src: .bashrc
+    dest: /root/.bashrc
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure SSHD
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  with_items:
+    - regexp: '^#?PasswordAuthentication'
+      line: 'PasswordAuthentication no'
+    - regexp: '^#?PubkeyAuthentication'
+      line: 'PubkeyAuthentication yes'
+    - regexp: '^#?ChallengeResponseAuthentication'
+      line: 'ChallengeResponseAuthentication no'
+    - regexp: '^#?PermitEmptyPasswords'
+      line: 'PermitEmptyPasswords no'
+    - regexp: '^#?PermitRootLogin'
+      line: 'PermitRootLogin prohibit-password'
+    - regexp: '^#?AddressFamily'
+      line: 'AddressFamily inet'
+  notify: restart sshd
+
+- name: Create Docker config directory
+  tags:
+    - configure_docker
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Configure Docker daemon
+  tags:
+    - configure_docker
+  ansible.builtin.copy:
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "5m",
+          "max-file": "1"
+        }
+      }
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart docker
+
+- name: Configure systemd-journald log limits
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/journald.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  loop:
+    - { regexp: '^#?SystemMaxUse=', line: 'SystemMaxUse=100M' }
+    - { regexp: '^#?SystemMaxFileSize=', line: 'SystemMaxFileSize=10M' }
+    - { regexp: '^#?MaxRetentionSec=', line: 'MaxRetentionSec=2week' }
+  notify: restart journald
+
+- name: Disable IPv6
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: '1'
+    sysctl_file: /etc/sysctl.d/99-disable-ipv6.conf
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - net.ipv6.conf.all.disable_ipv6
+    - net.ipv6.conf.default.disable_ipv6
+
+- name: Ensure fail2ban jail.local exists
+  ansible.builtin.copy:
+    src: /etc/fail2ban/jail.conf
+    dest: /etc/fail2ban/jail.local
+    remote_src: true
+    force: false
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure fail2ban jail.local
+  community.general.ini_file:
+    path: /etc/fail2ban/jail.local
+    section: DEFAULT
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+  loop:
+    - { option: 'ignoreip', value: '127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10' }
+    - { option: 'bantime.increment', value: 'true' }
+    - { option: 'bantime', value: '60m' }
+    - { option: 'findtime', value: '60m' }
+    - { option: 'maxretry', value: '3' }
+  notify: restart fail2ban
+
+- name: Allow ports for IPv4 only
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    from_ip: 0.0.0.0/0
+  loop:
+    - '22'
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+
+- name: Install ufw-docker script
+  ansible.builtin.get_url:
+    url: https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
+    dest: /usr/local/bin/ufw-docker
+    mode: '0755'
+
+- name: Install ufw-docker rules into after.rules
+  ansible.builtin.command: ufw-docker install
+  register: ufw_docker_install
+  changed_when: "'installed' in ufw_docker_install.stdout"
+  notify: restart ufw
+
+- name: Install ufw-docker service
+  tags:
+    - ufw_docker
+  ansible.builtin.command: ufw-docker install-service
+  register: ufw_docker_install_service
+  changed_when: "'installed' in ufw_docker_install_service.stdout"
+
+- name: Deploy geoblock update script
+  tags:
+    - geoblock
+  ansible.builtin.template:
+    src: update-geoblock.sh.j2
+    dest: /usr/local/bin/update-geoblock.sh
+    mode: '0755'
+
+- name: Run geoblock script
+  tags:
+    - geoblock
+  ansible.builtin.command: /usr/local/bin/update-geoblock.sh
+  changed_when: true
+
+- name: Schedule weekly geoblock update
+  tags:
+    - geoblock
+  ansible.builtin.cron:
+    name: "Update geoblock ipset"
+    job: "/usr/local/bin/update-geoblock.sh"
+    weekday: "0"
+    hour: "3"
+    minute: "0"
+
+- name: Deploy ipset-geoblock-restore systemd service
+  tags:
+    - geoblock
+  ansible.builtin.template:
+    src: ipset-geoblock-restore.service.j2
+    dest: /etc/systemd/system/ipset-geoblock-restore.service
+    mode: '0644'
+
+- name: Enable ipset-geoblock-restore service
+  tags:
+    - geoblock
+  ansible.builtin.systemd:
+    name: ipset-geoblock-restore
+    enabled: true
+    state: started
+    daemon_reload: true

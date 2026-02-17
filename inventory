@@ -1,0 +1,2 @@
+[vps]
+myserver          ansible_host=vps-ip-address ansible_port=22 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa

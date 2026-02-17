@@ -1,0 +1,15 @@
+---
+- name: VPS deployment
+  hosts: vps
+  become: true
+  tags:
+    - vps
+  vars:
+    docker_network_name: vps
+  roles:
+    - role: vps_baseline
+      tags:
+        - vps_baseline
+    - role: ntopng
+      tags:
+        - ntopng

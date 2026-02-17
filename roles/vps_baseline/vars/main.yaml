@@ -1,0 +1,40 @@
+packages:
+  - sudo
+  - gnupg2
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - tmux
+  - htop
+  - net-tools
+  - nload
+  - vnstat
+  - python3-docker
+  - jq
+  - vim
+  - tree
+  - rsync
+  - nethogs
+  - tcpdump
+  - nfs-common
+  - sshfs
+  - rsyslog
+  - corkscrew
+  - fail2ban
+  - socat
+  - fastfetch
+  - ufw
+  - ipset
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+blocked_countries:
+  - cn
+  - ru
+  - br
+  - vn

@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore geoblock ipset and iptables rules
+After=network-pre.target docker.service ufw.service
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ipset restore -f /var/cache/geoblock/geoblock.rules
+ExecStart=/bin/sh -c 'iptables -C ufw-before-input -m set --match-set geoblock src -j DROP 2>/dev/null || iptables -I ufw-before-input -m set --match-set geoblock src -j DROP'
+ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -m set --match-set geoblock src -j DROP 2>/dev/null || iptables -I DOCKER-USER -m set --match-set geoblock src -j DROP'
+
+[Install]
+WantedBy=multi-user.target
