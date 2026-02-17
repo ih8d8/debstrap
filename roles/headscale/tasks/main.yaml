@@ -1,0 +1,68 @@
+- name: Ensure headscale directories exist
+  ansible.builtin.file:
+    path: /root/headscale/config
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy headscale config files
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: "config.yaml", dest: "/root/headscale/config/config.yaml", mode: "0600" }
+    - { src: "acl.json", dest: "/root/headscale/config/acl.json", mode: "0600" }
+    - { src: "create-user.sh", dest: "/root/headscale/create-user.sh", mode: "0755" }
+    - { src: "create-preauth-key.sh", dest: "/root/headscale/create-preauthkey.sh", mode: "0755" }
+    - { src: "register-node.sh", dest: "/root/headscale/register-node.sh", mode: "0755" }
+    - { src: "create-api-key.sh", dest: "/root/headscale/create-api-key.sh", mode: "0755" }
+    - { src: "list-nodes.sh", dest: "/root/headscale/list-nodes.sh", mode: "0755" }
+
+- name: "Copy docker-compose file (service: {{ service_name }})"
+  ansible.builtin.template:
+    src: docker_compose.yaml.j2
+    dest: /root/headscale/docker-compose.yaml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create a Docker network
+  community.docker.docker_network:
+    name: headscale
+    state: present
+
+- name: "Bring down Docker containers and remove volumes (service: {{ service_name }})"
+  tags:
+    - docker-remove
+  community.docker.docker_compose_v2:
+    project_src: "/root/headscale/"
+    state: absent
+    remove_volumes: true
+
+- name: "Run docker-compose up (service: {{ service_name }})"
+  community.docker.docker_compose_v2:
+    project_src: "/root/headscale/"
+    state: present
+
+- name: Allow container ports through ufw-docker
+  ansible.builtin.command: "ufw-docker allow {{ item.container }} {{ item.port }}"
+  loop:
+    - { container: 'nginx-proxy-manager', port: '80/tcp' }
+    - { container: 'nginx-proxy-manager', port: '443/tcp' }
+
+- name: Copy fail2ban config files for nginx-proxy-manager
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - { src: "fail2ban/npm-docker-filter.conf", dest: "/etc/fail2ban/filter.d/npm-docker.conf" }
+    - { src: "fail2ban/npm-docker-action.conf", dest: "/etc/fail2ban/action.d/npm-docker.conf" }
+    - { src: "fail2ban/npm-docker-jail.conf", dest: "/etc/fail2ban/jail.d/npm-docker.conf" }
+  notify: restart fail2ban

@@ -1,0 +1,16 @@
+{
+  "groups": {
+    "group:admin": ["your-username@"]
+  },
+  "tagOwners": {
+    "tag:untrusted": ["group:admin"]
+  },
+  "acls": [
+    // admin devices can reach everything
+    {
+      "action": "accept",
+      "src": ["group:admin"],
+      "dst": ["*:*"]
+    }
+  ]
+}

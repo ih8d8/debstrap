@@ -1,0 +1,52 @@
+---
+networks:
+  headscale:
+    external: true
+
+volumes:
+  headscale-data:
+  npm-data:
+  npm-letsencrypt:
+
+services:
+  headscale:
+    image: headscale/headscale:stable
+    container_name: headscale
+    restart: unless-stopped
+    volumes:
+      - headscale-data:/var/lib/headscale
+      - ./config:/etc/headscale
+    entrypoint: headscale serve
+    networks:
+      - headscale
+
+  {# headscale-ui:
+    container_name: headscale-ui
+    image: ghcr.io/gurucomputing/headscale-ui:latest
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -S http://localhost:8080 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - headscale #}
+
+  nginx-proxy-manager:
+    container_name: nginx-proxy-manager
+    image: 'jc21/nginx-proxy-manager:latest'
+    restart: unless-stopped
+    ports:
+      - '0.0.0.0:80:80' # Public HTTP Port
+      - '0.0.0.0:443:443' # Public HTTPS Port
+      - '127.0.0.1:81:81' # Admin Web Port
+    healthcheck:
+      test: ["CMD", "/usr/bin/check-health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    networks:
+      - headscale

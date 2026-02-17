@@ -13,3 +13,6 @@
     - role: ntopng
       tags:
         - ntopng
+    - role: headscale
+      tags:
+        - headscale
